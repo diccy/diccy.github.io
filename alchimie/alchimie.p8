@@ -34,7 +34,7 @@ next_gamestate=0
 
 -- start
 function gs_start_enter()
-	zero_score()
+	score_init()
 	pieces_init()
 end
 
@@ -283,7 +283,7 @@ function new_piece()
 	return {
 		-- mandatory
 		x=0,y=0, -- screen position
-		p=flr(rnd(biggest_piece))+1, -- piece type
+		p=min(flr(rnd(biggest_piece))+1,last_piece-1), -- piece type
 		-- facultative
 		--dx=0,dy=0, -- destination position (screen)
 		--gx=0,gy=0, -- grid position
@@ -448,6 +448,7 @@ grid_fallingpieces={} -- list
 grid_exp_groups={} -- list
 grid={} -- 2d array
 biggest_piece=0
+last_piece=12
 
 function grid_init()
 	biggest_piece=4
@@ -525,7 +526,7 @@ end
 function grid_count_score()
 	zero_score()
 	for p in all(grid_pieces) do
-		add_score(3^p.p)
+		add_piece_score(p)
 	end
 end
 
@@ -533,13 +534,15 @@ function grid_find_explosions()
 	grid_exp_groups={}
 	local grid_exp_set={}
 	for p in all(grid_pieces) do
-		if grid_exp_set[p]==nil then
-			if grid_similar_neighbours_count(p) >= 2 then
-				local eg=create_exp_group(grid_similar_set(p))
-				for e in all(eg.pieces) do
-					grid_exp_set[e]=true
+		if p.p < last_piece then
+			if grid_exp_set[p]==nil then
+				if grid_similar_neighbours_count(p) >= 2 then
+					local eg=create_exp_group(grid_similar_set(p))
+					for e in all(eg.pieces) do
+						grid_exp_set[e]=true
+					end
+					add(grid_exp_groups,eg)
 				end
-				add(grid_exp_groups,eg)
 			end
 		end
 	end
@@ -621,42 +624,68 @@ end
 -- score
 
 -- mega + kilo + units
-current_score={m=0,k=0,u=0}
-best_score={m=0,k=0,u=0}
+function new_score(m,k,u)
+	return {m=m,k=k,u=u}
+end
+
+piece_values={
+	-- powers of 3
+	new_score(0,0,3),
+	new_score(0,0,9),
+	new_score(0,0,27),
+	new_score(0,0,81),
+	new_score(0,0,243),
+	new_score(0,0,729),
+	new_score(0,2,187),
+	new_score(0,6,561),
+	new_score(0,19,683),
+	new_score(0,59,049),
+	new_score(0,177,147),
+	new_score(0,531,441)
+}
+current_score=new_score(0,0,0)
+best_score=new_score(0,0,0)
+
+function score_init()
+	zero_score()
+end
 
 function zero_score()
-	current_score={m=0,k=0,u=0}
+	current_score=new_score(0,0,0)
+end
+
+function score_compare(s1,s2)
+	if s1.m!=s2.m then
+		return s1.m-s2.m
+	elseif s1.k!=s2.k then
+		return s1.k-s2.k
+	elseif s1.u!=s2.u then
+		return s1.u-s2.u
+	else
+		return 0
+	end
+end
+
+function score_add(s1,s2)
+	local r=0
+	local a=s1.u+s2.u
+	s1.u=a%1000
+	r=flr(a/1000)
+	a=s1.k+s2.k+r
+	s1.k=a%1000
+	r=flr(a/1000)
+	a=s1.m+s2.m+r
+	s1.m=a%1000
 end
 
 function save_score()
-	if current_score.m<best_score.m then
-		return
-	elseif current_score.m==best_score.m then
-		if current_score.k<best_score.k then
-			return
-		elseif current_score.k==best_score.k then
-			if current_score.u<best_score.u then
-				return
-			end
-		end
+	if score_compare(best_score,current_score)<0 then
+		best_score=current_score
 	end
-	best_score=current_score
 end
 
-function add_score(n)
-	current_score.u+=n
-	if current_score.u>=1000 then
-		local r=current_score.u%1000
-		local a=current_score.u-r
-		current_score.u=r
-		current_score.k+=flr(a/1000)
-		if current_score.k>=1000 then
-			r=current_score.k%1000
-			a=current_score.k-r
-			current_score.k=r
-			current_score.m+=flr(a/1000)
-		end
-	end
+function add_piece_score(p)
+	score_add(current_score,piece_values[p.p])
 end
 
 function print_score(title,score,x,y,c)
